@@ -1,0 +1,86 @@
+import spidev
+import time
+
+class MCP3008:
+    """
+    A class to interface with the MCP3008 Analog-to-Digital Converter.
+    """
+    def __init__(self, bus=0, device=0, max_speed_hz=1350000):
+        """
+        Initializes the SPI connection for the MCP3008.
+        
+        Args:
+            bus (int): The SPI bus number (0 or 1).
+            device (int): The SPI device (chip select) number (0 or 1).
+            max_speed_hz (int): The maximum SPI speed in Hz.
+        """
+        self.spi = spidev.SpiDev()
+        self.bus = bus
+        self.device = device
+        self.max_speed_hz = max_speed_hz
+        self._is_open = False
+
+    def open(self):
+        """Opens the SPI connection."""
+        if not self._is_open:
+            self.spi.open(self.bus, self.device)
+            self.spi.max_speed_hz = self.max_speed_hz
+            self._is_open = True
+            print("SPI connection opened.")
+
+    def read_channel(self, channel):
+        """
+        Reads a single value from the specified ADC channel.
+        
+        Args:
+            channel (int): The ADC channel to read (0-7).
+        
+        Returns:
+            int: The 10-bit digital value (0-1023) from the ADC.
+        """
+        if not (0 <= channel <= 7):
+            raise ValueError("Channel must be between 0 and 7.")
+        
+        # Build the command to read from a single-ended channel.
+        # Command format: [start_bit, (single_ended_mode | channel) << 4, 0]
+        command = [1, (8 + channel) << 4, 0]
+        adc_data = self.spi.xfer2(command)
+        
+        # Combine the two bytes of data into a 10-bit value.
+        data = ((adc_data[1] & 3) << 8) + adc_data[2]
+        return data
+
+    def close(self):
+        """Closes the SPI connection."""
+        if self._is_open:
+            self.spi.close()
+            self._is_open = False
+            print("SPI connection closed.")
+
+    def __enter__(self):
+        """Context manager entry."""
+        self.open()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit."""
+        self.close()
+
+# --- Main execution block ---
+if __name__ == "__main__":
+    # Using the class with a 'with' statement ensures cleanup.
+    try:
+        with MCP3008() as adc:
+            print("Reading ADC values. Press Ctrl+C to stop.")
+            while True:
+                value = adc.read_channel(0)
+                # The value is a 10-bit number (0-1023).
+                # You can convert it to a voltage if you know the reference voltage (Vref).
+                # voltage = value * Vref / 1023.0
+                print(f"Raw ADC Value: {value}")
+                time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("\nProgram stopped by user.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
